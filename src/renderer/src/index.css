@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Inter",
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+
+  --color-canvas: #090a0d;
+  --color-panel: #101218;
+  --color-panel-2: #141720;
+  --color-panel-3: #191d27;
+  --color-edge: rgba(255, 255, 255, 0.07);
+  --color-edge-strong: rgba(255, 255, 255, 0.13);
+  --color-ink: #edeef2;
+  --color-muted: #969dab;
+  --color-faint: #666e7d;
+  --color-accent: #f0b35f;
+  --color-accent-strong: #ffc46b;
+  --color-accent-soft: rgba(240, 179, 95, 0.13);
+  --color-accent-ink: #231606;
+  --color-mint: #62d6ab;
+  --color-danger: #f07f83;
+  --color-info: #7db5ff;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+input[type="checkbox"] {
+  accent-color: #f0b35f;
+}
+
+::selection {
+  background: rgba(240, 179, 95, 0.28);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2f3a transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #262b35;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #343a47;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.app-bg {
+  background-image:
+    radial-gradient(1100px 520px at 94% -14%, rgba(240, 179, 95, 0.06), transparent 62%),
+    radial-gradient(900px 620px at -6% 108%, rgba(98, 214, 171, 0.035), transparent 62%);
+}
+
+@layer components {
+  .panel {
+    border: 1px solid var(--color-edge);
+    border-radius: 18px;
+    background:
+      linear-gradient(180deg, rgba(23, 26, 36, 0.82), rgba(15, 17, 24, 0.92));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.035),
+      0 20px 50px -32px rgba(0, 0, 0, 0.85);
+  }
+
+  .panel-flat {
+    border: 1px solid var(--color-edge);
+    border-radius: 14px;
+    background: rgba(18, 21, 29, 0.66);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  }
+
+  .inset-field {
+    border: 1px solid var(--color-edge);
+    background: rgba(255, 255, 255, 0.028);
+  }
+
+  .field:focus {
+    outline: none;
+    border-color: rgba(240, 179, 95, 0.45);
+    box-shadow: 0 0 0 3px rgba(240, 179, 95, 0.09);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out both;
+}
+
+.fade-up {
+  animation: fade-up 0.22s ease-out both;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter,
+  .fade-up,
+  .spin {
+    animation: none;
+  }
+}

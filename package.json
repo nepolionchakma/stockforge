@@ -1,0 +1,78 @@
+{
+  "name": "stockforge-studio",
+  "productName": "StockForge Studio",
+  "version": "1.0.0",
+  "description": "Plan US holiday content, write AI image prompts, generate Adobe Stock metadata and embed it into your images.",
+  "main": "./out/main/index.js",
+  "author": "StockForge",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "npm run typecheck && electron-vite build",
+    "verify": "tsx scripts/verify-core.ts && tsx scripts/verify-embed.ts",
+    "smoke:ui": "node scripts/smoke-ui.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "exiftool-vendored": "^39.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
+    "lucide-react": "^0.544.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "electron-vite": "^6.0.0",
+    "playwright-core": "^1.64.1",
+    "sharp": "^0.34.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.7"
+  },
+  "build": {
+    "appId": "com.stockforge.studio",
+    "productName": "StockForge Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/exiftool-vendored.pl/**",
+      "node_modules/exiftool-vendored.exe/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "StockForge Studio"
+    }
+  }
+}
