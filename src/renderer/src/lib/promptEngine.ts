@@ -16,6 +16,20 @@ export const PROMPT_STYLES: PromptStyleOption[] = [
   { value: 'minimal', label: 'Minimal', short: 'Minimal' }
 ]
 
+/**
+ * Splits a master-prompt AI response into per-prompt structured blocks.
+ * The master prompt asks the model to number concepts as PROMPT [01], PROMPT [02], etc.,
+ * each with sections A–H (Concept Title, Design Category, …). Each block is returned
+ * verbatim so the full structured output is preserved instead of being collapsed to a
+ * single plain paragraph.
+ */
+export function splitStructuredPrompts(raw: string): string[] {
+  return raw
+    .split(/\n(?=PROMPT\s*\[)/i)
+    .map((block) => block.trim())
+    .filter((block) => /^PROMPT\s*\[/i.test(block))
+}
+
 type ConcreteStyle = Exclude<PromptStyle, 'auto'>
 
 interface StyleRecipe {

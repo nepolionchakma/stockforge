@@ -183,6 +183,8 @@ export interface AiPromptResult {
   model: string
   endpointId: string
   attempted: number
+  /** Full raw AI response when a master-prompt template is used (A-H structured output). */
+  rawResponse?: string
 }
 
 export interface AiPromptRequest {

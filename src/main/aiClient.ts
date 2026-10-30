@@ -20,6 +20,7 @@ const STYLE_LABELS: Record<AiPromptRequest['style'], string> = {
 type ChatConfig = AiRuntimeConfig
 
 interface ChatMessage {
+
   role: 'system' | 'user'
   content: string
 }
@@ -105,69 +106,55 @@ async function chat(
   throw new Error('The AI provider returned an empty response')
 }
 
-function asPromptText(value: unknown): string {
-  if (typeof value === 'string') return value.trim()
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    if (typeof record.prompt === 'string') return record.prompt.trim()
-    if (typeof record.text === 'string') return record.text.trim()
-  }
-  return ''
-}
+const PROMPT_HEADER = /^[\s#*_>]*PROMPT\s*(?:0*\d+|example)[\s*_:.-]*$/i
+const SEPARATOR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/
+const A_HEADER = /^[\s#*_>]*A\s*[.)]\s+CONCEPT\s+TITLE/i
+const D_HEADER = /^[\s#*_>]*D\s*[.)]\s+FULL\s+IMAGE/im
 
 function parsePromptList(content: string, count: number): string[] {
   let text = content.trim()
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+
+  // Remove a wrapping ``` fence if the model added one.
+  const fenced = text.match(/^```[a-z]*\s*([\s\S]*?)```$/i)
   if (fenced) text = fenced[1].trim()
 
-  const collect = (value: unknown): string[] => {
-    if (!Array.isArray(value)) return []
-    return value.map(asPromptText).filter((prompt) => prompt.length >= 20)
-  }
+  const lines = text.split(/\r?\n/)
 
-  let prompts: string[] = []
-  try {
-    const parsed: unknown = JSON.parse(text)
-    prompts = collect(parsed)
-    if (prompts.length === 0 && parsed && typeof parsed === 'object') {
-      prompts = collect((parsed as { prompts?: unknown }).prompts)
-    }
-  } catch {
-    const arrayMatch = text.match(/\[[\s\S]*\]/)
-    if (arrayMatch) {
-      try {
-        prompts = collect(JSON.parse(arrayMatch[0]))
-      } catch {
-        // Fall through to line parsing.
-      }
+  // Split into blocks at every "PROMPT 01" / "PROMPT Example" header.
+  const blocks: string[][] = []
+  for (const line of lines) {
+    if (PROMPT_HEADER.test(line)) {
+      blocks.push([])
+    } else if (blocks.length > 0) {
+      blocks[blocks.length - 1].push(line)
     }
   }
 
-  if (prompts.length === 0) {
-    prompts = text
-      .split(/\r?\n+/)
-      .map((line) =>
-        line
-          .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '')
-          .replace(/^["'`]+|["'`]+$/g, '')
-          .trim()
-      )
-      .filter(
-        (line) =>
-          line.length >= 40 &&
-          !/^(here|sure|below|the following|prompt \d)/i.test(line)
-      )
-  }
+  // No "PROMPT NN" header (e.g. single prompt response) -> whole text is one block.
+  if (blocks.length === 0) blocks.push(lines)
 
   const seen = new Set<string>()
-  return prompts
-    .filter((prompt) => {
-      const key = prompt.toLowerCase()
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .slice(0, count)
+  const results: string[] = []
+
+  for (const block of blocks) {
+    const body = block.filter((line) => !SEPARATOR.test(line))
+
+    // Start from "A. CONCEPT TITLE" (drops any intro text like "Here are your prompts:")
+    const start = body.findIndex((line) => A_HEADER.test(line))
+    if (start === -1) continue
+
+    const prompt = body.slice(start).join('\n').trim()
+
+    // Must contain section D; NEGATIVE PROMPT is optional.
+    if (!D_HEADER.test(prompt)) continue
+
+    const key = prompt.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    results.push(prompt)
+  }
+
+  return results.slice(0, count)
 }
 
 function clean(value: unknown, limit: number): string {
@@ -218,24 +205,9 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
     .filter(Boolean)
     .join('\n')
 
-  const outputRules = [
-    'OUTPUT FORMAT — HIGHEST PRIORITY, OVERRIDES ANY EARLIER PRESENTATION OR NUMBERING INSTRUCTIONS:',
-    `Use the creative direction above, but return ONLY a valid JSON array of exactly ${count} strings.`,
-    'Each string must be one complete, independently usable English image-generation prompt, with every important visual instruction written inside that string.',
-    'End each string with a final "Negative prompt: ..." line customized to that concept and asset type.',
-    'Do not include concept titles, A/B/C section labels, markdown, numbering, commentary, or extra JSON keys.',
-    existing.length > 0
-      ? `Do not repeat or lightly reword these existing prompts:\n${existing.join('\n---\n')}`
-      : 'There are no existing prompts to avoid.',
-    style === 'auto'
-      ? 'Use a varied, well-balanced mix of visual styles as directed above.'
-      : `Preferred visual style for this batch: ${STYLE_LABELS[style]}.`
-  ].join('\n')
-
   const system = masterPrompt
-    ? `${masterPrompt}\n\n${outputRules}${
-        whiteBackground ? `\n\n${WHITE_BACKGROUND_INSTRUCTION}` : ''
-      }`
+    ? `${masterPrompt}${whiteBackground ? `\n\n${WHITE_BACKGROUND_INSTRUCTION}` : ''
+    }`
     : genericSystem
 
   const user = JSON.stringify({
@@ -248,6 +220,14 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
     count,
     whiteBackground
   })
+
+  // console.log('[StockForge AI] REQUEST', {
+  //   provider: configs[0]?.provider,
+  //   model: configs[0]?.model,
+  //   count,
+  //   systemPrompt: system,
+  //   userMessage: user
+  // })
 
   const messages: ChatMessage[] = [
     { role: 'system', content: system },
@@ -264,7 +244,9 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
         messages,
         masterPrompt ? Math.min(12_000, count * 600 + 600) : Math.min(4000, count * 220 + 180)
       )
+      // console.log('[StockForge AI] RAW RESPONSE', content)
       const parsedPrompts = parsePromptList(content, count)
+      // console.log('[StockForge AI] PARSED', { count, parsedLength: parsedPrompts.length })
       if (parsedPrompts.length === 0) {
         throw new Error('The AI response did not contain usable prompts')
       }
@@ -276,7 +258,8 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
         provider: config.provider,
         model: config.model,
         endpointId: config.id,
-        attempted
+        attempted,
+        rawResponse: content
       }
     } catch (error) {
       const label =

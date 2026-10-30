@@ -35,7 +35,7 @@ import {
   keywordSuggestions,
   metadataToText
 } from '../lib/metadataEngine'
-import { generatePrompts, newPromptId } from '../lib/promptEngine'
+import { generatePrompts, newPromptId, splitStructuredPrompts } from '../lib/promptEngine'
 
 export type AppTab = 'events' | 'metadata' | 'apply'
 export type ToastTone = 'success' | 'error' | 'info'
@@ -165,15 +165,6 @@ function readMasterPrompt(): string {
   } catch {
     return DEFAULT_MASTER_PROMPT
   }
-}
-
-function toPromptRecords(texts: string[], style: PromptStyle): PromptRecord[] {
-  return texts.map((text) => ({
-    id: newPromptId(),
-    text,
-    style,
-    createdAt: Date.now()
-  }))
 }
 
 function errorText(error: unknown, fallback: string): string {
@@ -380,7 +371,23 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
             whiteBackground,
             systemPrompt: customPrompt
           })
-          const fresh = toPromptRecords(result.prompts, style)
+          const structured = splitStructuredPrompts(result.rawResponse ?? '')
+          const freshTexts: string[] = customPrompt && structured.length > 0
+            ? structured.slice(0, count)
+            : result.prompts
+          // console.log('[StockForge AI] STORED', {
+          //   eventId,
+          //   customPrompt,
+          //   structuredBlocks: structured.length,
+          //   storedCount: freshTexts.length,
+          //   texts: freshTexts
+          // })
+          const fresh = freshTexts.map((text) => ({
+            id: newPromptId(),
+            text,
+            style,
+            createdAt: Date.now()
+          }))
           setPrompts((current) => ({
             ...current,
             [eventId]: [...(current[eventId] ?? []), ...fresh]
@@ -388,8 +395,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
           const provider =
             AI_PROVIDERS.find((item) => item.id === result.provider)?.label ?? result.provider
           notify(
-            `${fresh.length} AI prompt${fresh.length === 1 ? '' : 's'} ${
-              mode === 'add' ? 'added' : 'generated'
+            `${fresh.length} AI prompt${fresh.length === 1 ? '' : 's'} ${mode === 'add' ? 'added' : 'generated'
             } · ${provider}${result.attempted > 1 ? ' (fallback)' : ''}`,
             'success'
           )
@@ -486,8 +492,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
           const provider =
             AI_PROVIDERS.find((item) => item.id === result.provider)?.label ?? result.provider
           notify(
-            `Prompt regenerated · ${provider}${
-              result.attempted > 1 ? ' (fallback)' : ''
+            `Prompt regenerated · ${provider}${result.attempted > 1 ? ' (fallback)' : ''
             }`,
             'success'
           )
@@ -790,8 +795,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       const failed = results.filter((result) => result.status === 'failed').length
       if (saved > 0) {
         notify(
-          `${saved} file${saved === 1 ? '' : 's'} saved with metadata${
-            failed > 0 ? `, ${failed} failed` : ''
+          `${saved} file${saved === 1 ? '' : 's'} saved with metadata${failed > 0 ? `, ${failed} failed` : ''
           }`,
           failed > 0 ? 'info' : 'success'
         )
