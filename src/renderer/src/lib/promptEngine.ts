@@ -1,4 +1,5 @@
 import type { PromptRecord, PromptStyle, ResolvedEvent } from '@shared/types'
+import { WHITE_BACKGROUND_CLAUSE } from '@shared/whiteBackground'
 
 export interface PromptStyleOption {
   value: PromptStyle
@@ -163,15 +164,20 @@ export function newPromptId(): string {
 export function buildPrompt(
   event: ResolvedEvent,
   style: ConcreteStyle = 'photo',
-  variant = 0
+  variant = 0,
+  whiteBackground = false
 ): PromptRecord {
   const recipe = RECIPES[style]
   const objects = shuffle(event.objects)
   const primary = objects[variant % objects.length]
   const secondary = objects[(variant + 2) % objects.length]
-  const scene = pick(SCENES[event.season] ?? SCENES.neutral)
+  const scene = whiteBackground
+    ? WHITE_BACKGROUND_CLAUSE
+    : pick(SCENES[event.season] ?? SCENES.neutral)
   const composition = pick(COMPOSITIONS)
-  const lighting = pick(LIGHTING)
+  const lighting = whiteBackground
+    ? 'bright, even studio lighting with a soft contact shadow'
+    : pick(LIGHTING)
   const intro = pick(recipe.intros)
   const cue = KIND_CUES[event.kind] ?? 'editorial seasonal mood'
 
@@ -200,13 +206,14 @@ export function buildPrompt(
 export function generatePrompts(
   event: ResolvedEvent,
   style: PromptStyle,
-  count: number
+  count: number,
+  whiteBackground = false
 ): PromptRecord[] {
-  const safeCount = Math.min(12, Math.max(1, Math.round(count)))
+  const safeCount = Math.min(20, Math.max(1, Math.round(count)))
   const styles = style === 'auto' ? shuffle(STYLE_KEYS) : [style]
   return Array.from({ length: safeCount }, (_, index) => {
     const chosen = style === 'auto' ? styles[index % styles.length] : (style as ConcreteStyle)
-    return buildPrompt(event, chosen, index + Math.floor(Math.random() * 7))
+    return buildPrompt(event, chosen, index + Math.floor(Math.random() * 7), whiteBackground)
   })
 }
 

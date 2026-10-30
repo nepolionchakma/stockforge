@@ -196,6 +196,10 @@ export interface AiPromptRequest {
   style: PromptStyle
   count: number
   existingPrompts: string[]
+  /** Force every generated prompt onto a pure white studio background. */
+  whiteBackground?: boolean
+  /** Fully substituted master-prompt text. Empty/undefined uses the built-in short prompt. */
+  systemPrompt?: string
 }
 
 export interface AiTestResult {

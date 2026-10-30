@@ -59,6 +59,13 @@ async function main() {
     if (seededPrompts < 1) throw new Error('Expected one seeded prompt on the events tab')
     const promptValue = await page.locator('textarea[aria-label^="Prompt"]').first().inputValue()
     if (promptValue.length < 80) throw new Error('Seeded prompt looks too short')
+    if (!/pure white/i.test(promptValue)) {
+      throw new Error('Default white background was not applied to the seeded prompt')
+    }
+    const whiteBackgroundSwitch = page.getByRole('switch', { name: 'White background' })
+    if ((await whiteBackgroundSwitch.getAttribute('aria-checked')) !== 'true') {
+      throw new Error('White background switch is not on by default')
+    }
     await page.screenshot({ path: path.join(shotDir, 'events.png') })
 
     const promptField = page.locator('textarea[aria-label^="Prompt"]').first()
@@ -79,6 +86,25 @@ async function main() {
     if ((await page.locator('textarea[aria-label^="Prompt"]').count()) !== 1) {
       throw new Error('Prompt addition did not work')
     }
+
+    await whiteBackgroundSwitch.click()
+    await page.waitForTimeout(150)
+    await page.getByRole('button', { name: 'Add prompt', exact: true }).click()
+    await page.waitForFunction(
+      () => document.querySelectorAll('textarea[aria-label^="Prompt"]').length === 2
+    )
+    const promptWithoutWhite = await page
+      .locator('textarea[aria-label^="Prompt"]')
+      .last()
+      .inputValue()
+    if (/pure white/i.test(promptWithoutWhite)) {
+      throw new Error('White background stayed on after switching it off')
+    }
+    await whiteBackgroundSwitch.click()
+    await page.getByRole('button', { name: 'Remove prompt' }).last().click()
+    await page.waitForFunction(
+      () => document.querySelectorAll('textarea[aria-label^="Prompt"]').length === 1
+    )
 
     await page.getByRole('button', { name: /Metadata Titles, keywords, CSV/ }).click()
     await page.waitForSelector('text=Metadata lab')

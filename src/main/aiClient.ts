@@ -5,6 +5,7 @@ import {
   type AiPromptResult,
   type AiTestResult
 } from '../shared/types'
+import { ensureWhiteBackground, WHITE_BACKGROUND_INSTRUCTION } from '../shared/whiteBackground'
 import { getAiConfigs, type AiRuntimeConfig } from './aiSettings'
 
 const STYLE_LABELS: Record<AiPromptRequest['style'], string> = {
@@ -185,7 +186,7 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
   const configs = (await getAiConfigs()).filter((config) => config.apiKey)
   if (configs.length === 0) throw new Error('Add and save an API key in Settings first')
 
-  const count = Math.max(1, Math.min(12, Math.round(Number(request.count) || 1)))
+  const count = Math.max(1, Math.min(20, Math.round(Number(request.count) || 1)))
   const eventName = clean(request.eventName, 120) || 'a US seasonal event'
   const eventDate = clean(request.eventDate, 80) || 'date varies'
   const blurb = clean(request.blurb, 400)
@@ -194,9 +195,12 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
   const keywords = cleanList(request.keywords, 20)
   const objects = cleanList(request.objects, 20)
   const style = request.style in STYLE_LABELS ? request.style : 'auto'
+  const whiteBackground = request.whiteBackground === true
   const existing = cleanList(request.existingPrompts, 24).map((prompt) => prompt.slice(0, 400))
+  const masterPrompt =
+    typeof request.systemPrompt === 'string' ? request.systemPrompt.trim().slice(0, 80_000) : ''
 
-  const system = [
+  const genericSystem = [
     'You are a senior Adobe Stock contributor who writes prompts for commercially successful AI-generated object imagery.',
     `Create exactly ${count} distinct, detailed image-generation prompts for the US occasion "${eventName}" (${eventDate}).`,
     `Occasion type: ${kind}. ${blurb}`,
@@ -206,10 +210,33 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
     'Each prompt must be one paragraph of 45-100 words and describe: the hero object, supporting props, surface or background, composition with copy space, lighting, color palette, and camera/lens or render technique.',
     'Keep the imagery commercially useful and generic. No text, logos, watermarks, brands, celebrities, copyrighted characters or recognizable people.',
     'Do not mention Adobe Stock. Do not number the prompts or add commentary.',
+    whiteBackground ? WHITE_BACKGROUND_INSTRUCTION : '',
     'Avoid repeating these existing prompts:',
     existing.length > 0 ? existing.join('\n---\n') : '(none yet)',
     `Return ONLY a JSON array of ${count} strings.`
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const outputRules = [
+    'OUTPUT FORMAT — HIGHEST PRIORITY, OVERRIDES ANY EARLIER PRESENTATION OR NUMBERING INSTRUCTIONS:',
+    `Use the creative direction above, but return ONLY a valid JSON array of exactly ${count} strings.`,
+    'Each string must be one complete, independently usable English image-generation prompt, with every important visual instruction written inside that string.',
+    'End each string with a final "Negative prompt: ..." line customized to that concept and asset type.',
+    'Do not include concept titles, A/B/C section labels, markdown, numbering, commentary, or extra JSON keys.',
+    existing.length > 0
+      ? `Do not repeat or lightly reword these existing prompts:\n${existing.join('\n---\n')}`
+      : 'There are no existing prompts to avoid.',
+    style === 'auto'
+      ? 'Use a varied, well-balanced mix of visual styles as directed above.'
+      : `Preferred visual style for this batch: ${STYLE_LABELS[style]}.`
   ].join('\n')
+
+  const system = masterPrompt
+    ? `${masterPrompt}\n\n${outputRules}${
+        whiteBackground ? `\n\n${WHITE_BACKGROUND_INSTRUCTION}` : ''
+      }`
+    : genericSystem
 
   const user = JSON.stringify({
     event: eventName,
@@ -218,7 +245,8 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
     props: objects,
     palette,
     style,
-    count
+    count,
+    whiteBackground
   })
 
   const messages: ChatMessage[] = [
@@ -234,12 +262,15 @@ export async function generateAiPrompts(request: AiPromptRequest): Promise<AiPro
       const content = await chat(
         config,
         messages,
-        Math.min(4000, count * 220 + 180)
+        masterPrompt ? Math.min(12_000, count * 600 + 600) : Math.min(4000, count * 220 + 180)
       )
-      const prompts = parsePromptList(content, count)
-      if (prompts.length === 0) {
+      const parsedPrompts = parsePromptList(content, count)
+      if (parsedPrompts.length === 0) {
         throw new Error('The AI response did not contain usable prompts')
       }
+      const prompts = whiteBackground
+        ? parsedPrompts.map(ensureWhiteBackground)
+        : parsedPrompts
       return {
         prompts,
         provider: config.provider,

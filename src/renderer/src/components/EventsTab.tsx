@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Square,
   Trash2,
   Wand2
 } from 'lucide-react'
@@ -60,6 +61,8 @@ export function EventsTab(): React.JSX.Element {
   const [promptStyle, setPromptStyle] = useState<PromptStyle>('auto')
 
   const event = app.selectedEvent
+  const [niche, setNiche] = useState(event.name)
+  const [nicheKeywords, setNicheKeywords] = useState<string[]>([])
   const prompts = app.prompts[event.id] ?? []
   const aiEndpoints = app.aiSettings.endpoints.filter((endpoint) => endpoint.hasApiKey)
   const primaryAi = aiEndpoints[0]
@@ -67,6 +70,19 @@ export function EventsTab(): React.JSX.Element {
   useEffect(() => {
     app.seedPrompts(event.id)
   }, [event.id, app.prompts, app.seedPrompts])
+
+  useEffect(() => {
+    setNiche(event.name)
+    setNicheKeywords([])
+  }, [event.id, event.name])
+
+  const toggleNicheKeyword = (keyword: string): void => {
+    const next = nicheKeywords.includes(keyword)
+      ? nicheKeywords.filter((item) => item !== keyword)
+      : [...nicheKeywords, keyword]
+    setNicheKeywords(next)
+    setNiche(next.length > 0 ? `${event.name} — ${next.join(', ')}` : event.name)
+  }
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -106,12 +122,10 @@ export function EventsTab(): React.JSX.Element {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-end justify-between gap-5 px-8 pb-5 pt-7">
-        <div>
-          <Eyebrow>US content calendar</Eyebrow>
-          <h1 className="mt-2 text-[27px] font-semibold tracking-[-0.025em] text-ink">
-            Events &amp; prompts
-          </h1>
-          <p className="mt-1.5 max-w-[560px] text-[12.5px] leading-relaxed text-muted">
+        <div>              <Eyebrow>US CONTENT CALENDAR</Eyebrow>
+              <h1 className="mt-2 text-[27px] font-semibold tracking-[-0.025em] text-ink">
+                Events &amp; prompts
+              </h1>            <p className="mt-1.5 max-w-[560px] text-[12.5px] leading-relaxed text-muted">
             Pick a US holiday or cultural moment, then shape AI image prompts for your
             Adobe Stock object collections.
           </p>
@@ -317,9 +331,10 @@ export function EventsTab(): React.JSX.Element {
           </div>
 
           <div className="panel mt-6 overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.055] px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/20 bg-accent-soft text-accent">
+            <div className="flex flex-col gap-3 border-b border-white/[0.055] px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/20 bg-accent-soft text-accent">
                   <Wand2 className="h-4 w-4" />
                 </div>
                 <div>
@@ -328,6 +343,9 @@ export function EventsTab(): React.JSX.Element {
                     <Badge tone="accent">
                       {prompts.length} {prompts.length === 1 ? 'prompt' : 'prompts'}
                     </Badge>
+                    {app.generatePromptsWithAi && app.masterPrompt.trim() ? (
+                      <Badge tone="info">Master prompt</Badge>
+                    ) : null}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">
                     <span
@@ -350,6 +368,18 @@ export function EventsTab(): React.JSX.Element {
                     <span className="shrink-0">· Edit before copying</span>
                   </div>
                 </div>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Sparkles className="h-3.5 w-3.5" />}
+                  loading={app.generatingPrompts}
+                  onClick={() =>
+                    void app.generatePromptsFor(event.id, promptStyle, promptCount, niche)
+                  }
+                >
+                  {app.generatingPrompts ? 'Generating…' : 'Generate'}
+                </Button>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex h-8 items-center rounded-lg border border-edge bg-white/[0.03]">
@@ -368,8 +398,8 @@ export function EventsTab(): React.JSX.Element {
                   <button
                     type="button"
                     className="flex h-full w-7 items-center justify-center text-faint transition-colors hover:text-ink"
-                    onClick={() => setPromptCount((count) => Math.min(12, count + 1))}
-                    disabled={promptCount >= 12 || app.generatingPrompts}
+                    onClick={() => setPromptCount((count) => Math.min(20, count + 1))}
+                    disabled={promptCount >= 20 || app.generatingPrompts}
                     aria-label="More prompts"
                   >
                     <Plus className="h-3 w-3" />
@@ -391,18 +421,90 @@ export function EventsTab(): React.JSX.Element {
                     ))}
                   </Select>
                 </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Sparkles className="h-3.5 w-3.5" />}
-                  loading={app.generatingPrompts}
-                  onClick={() =>
-                    void app.generatePromptsFor(event.id, promptStyle, promptCount)
-                  }
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={app.whiteBackground}
+                  aria-label="White background"
+                  title="Add a pure white studio background to every generated prompt"
+                  onClick={() => app.setWhiteBackground(!app.whiteBackground)}
+                  disabled={app.generatingPrompts}
+                  className={cx(
+                    'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10.5px] font-medium transition-colors disabled:opacity-50',
+                    app.whiteBackground
+                      ? 'border-accent/35 bg-accent-soft text-accent'
+                      : 'border-edge bg-white/[0.03] text-faint hover:text-ink'
+                  )}
                 >
-                  {app.generatingPrompts ? 'Generating…' : 'Generate'}
+                  <Square
+                    className={cx(
+                      'h-3 w-3',
+                      app.whiteBackground ? 'fill-current' : 'fill-transparent'
+                    )}
+                  />
+                  White background
+                </button>
+              </div>
+            </div>
+
+            <div className="border-b border-white/[0.055] px-4 py-3">
+              <div className="flex flex-wrap items-end gap-2.5">
+                <div className="min-w-[220px] flex-1">
+                  <label
+                    htmlFor={`niche-${event.id}`}
+                    className="text-[9.5px] font-medium uppercase tracking-[0.13em] text-faint"
+                  >
+                    Niche name
+                  </label>
+                  <input
+                    id={`niche-${event.id}`}
+                    value={niche}
+                    onChange={(inputEvent) => setNiche(inputEvent.target.value)}
+                    aria-label="Niche name"
+                    placeholder={event.name}
+                    className="field mt-1.5 h-8.5 w-full rounded-lg border border-edge bg-white/[0.03] px-2.5 text-[11.5px] text-ink placeholder:text-faint focus:outline-none"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setNicheKeywords([])
+                    setNiche(event.name)
+                  }}
+                  disabled={niche === event.name && nicheKeywords.length === 0}
+                >
+                  Reset to event
                 </Button>
               </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {event.keywords.map((keyword) => {
+                  const selected = nicheKeywords.includes(keyword)
+                  return (
+                    <button
+                      key={keyword}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={`${selected ? 'Remove' : 'Add'} keyword ${keyword} to niche`}
+                      onClick={() => toggleNicheKeyword(keyword)}
+                      className={cx(
+                        'rounded-md border px-2 py-1 text-[10px] transition-colors',
+                        selected
+                          ? 'border-accent/35 bg-accent-soft text-accent'
+                          : 'border-white/[0.06] bg-white/[0.025] text-muted hover:border-white/[0.13] hover:text-ink'
+                      )}
+                    >
+                      {selected ? '✓' : '+'} {keyword}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="mt-1.5 text-[9.5px] leading-relaxed text-faint">
+                Selecting keywords updates the NICHE NAME and replaces the prompt count in the
+                master prompt at generation time.{' '}
+                <span className="text-muted">White background</span> is on by default; switch it off
+                to let prompts use scenes, surfaces and colored backdrops.
+              </p>
             </div>
 
             <div className="space-y-2.5 p-4">
@@ -420,7 +522,7 @@ export function EventsTab(): React.JSX.Element {
                     className="mt-4"
                     icon={<Plus className="h-3.5 w-3.5" />}
                     loading={app.generatingPrompts}
-                    onClick={() => void app.addPrompt(event.id, promptStyle)}
+                    onClick={() => void app.addPrompt(event.id, promptStyle, niche)}
                   >
                     Add a prompt
                   </Button>
@@ -433,7 +535,9 @@ export function EventsTab(): React.JSX.Element {
                     index={index}
                     busy={app.generatingPrompts}
                     onUpdate={(text) => app.updatePrompt(event.id, prompt.id, text)}
-                    onRegenerate={() => void app.regeneratePrompt(event.id, prompt.id)}
+                    onRegenerate={() =>
+                      void app.regeneratePrompt(event.id, prompt.id, niche)
+                    }
                     onRemove={() => app.removePrompt(event.id, prompt.id)}
                     onCopy={() => app.copyText(prompt.text, 'Prompt copied')}
                   />
@@ -447,7 +551,7 @@ export function EventsTab(): React.JSX.Element {
                     size="sm"
                     icon={<Plus className="h-3.5 w-3.5" />}
                     disabled={app.generatingPrompts}
-                    onClick={() => void app.addPrompt(event.id, promptStyle)}
+                    onClick={() => void app.addPrompt(event.id, promptStyle, niche)}
                   >
                     Add prompt
                   </Button>

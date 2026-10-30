@@ -23,9 +23,15 @@ AI API key if you add one in Settings.
 - Search by event, prop or keyword; filter by federal, seasonal, awareness, shopping,
   cultural or food.
 - Selecting an event seeds **one prompt by default** from the offline builder.
-- Generate 1–12 at a time with an auto, photo, 3D, vector, watercolor or minimal style.
+- Generate 1–20 at a time with an auto, photo, 3D, vector, watercolor or minimal style.
+- A **Niche name** builder above the prompt list: edit it directly, or click event keywords to
+  append them to the niche used for generation.
 - With an AI key saved and enabled, **Generate**, **Add prompt** and **Regenerate** call your
   provider. Without a key they use the offline template engine.
+- When AI is enabled, the saved **master prompt template** is used for generation. Its
+  `NICHE NAME:` value and prompt count are substituted from the current niche and the 1–20
+  count selector before the request is sent, so neither value is hardcoded.
+- **White background** is on by default. It adds a seamless pure-white studio background to every AI and offline prompt, including a soft contact shadow and generous clean space. Switch it off beside the prompt style to let prompts use scenes, surfaces and colored backdrops again. The choice is remembered.
 - Every prompt is editable, regenerable, removable and copyable. Copy all is available too.
 - Prompts are saved per event in local storage, so they survive a restart.
 - The prompt header shows whether AI or the offline builder is active.
@@ -70,13 +76,19 @@ Open the gear at the bottom of the sidebar.
   Groq Cloud (free tier), OpenRouter Free (`openrouter/free`, roughly 50 requests/day at the
   time of writing), and Z.ai GLM Flash models. Limits and model availability are controlled by
   each provider and can change; switch models or providers in the same panel if needed.
-- **Add multiple API connections** with **Add API**. Each connection has its own provider, model
-  and encrypted key. Use the ↑/↓ buttons to set priority.
+- **Add unlimited API connections** with **Add API**. Each connection has its own provider,
+  model and encrypted key. After saving a new connection the form closes so **Add API** is ready
+  immediately for the next one. Use the ↑/↓ buttons to set priority.
 - Prompt generation tries connections **from top to bottom**. If a key is rate-limited, out of
   quota, or the request fails, the next saved key is tried automatically. The success toast shows
   which provider was used and whether a fallback was needed.
 - Each API key is encrypted through Electron `safeStorage` in the app's user-data folder. Keys
   are never returned to the renderer, never displayed again after saving, and never logged.
+- **Master prompt template** — editable and saved automatically. The default is the long
+  commercial-stock master prompt. Paste any template containing a `NICHE NAME:` line; the app
+  replaces that line with the niche from Prompt studio and replaces prompt-count references with
+  the selected count. **Restore default** brings the shipped template back; **Clear** falls back
+  to the short built-in prompt.
 - **Use AI when generating prompts** can be switched off at any time. If no key is saved, the
   offline builder is used automatically.
 - **Text size** offers 90%, 100%, 110% and 120%. It scales the whole interface so labels and
@@ -122,7 +134,7 @@ npm run typecheck       # main + preload + renderer
 npm run build           # production bundles
 npm run verify          # calendar/math/metadata/CSV + ExifTool roundtrip
 npm run smoke:ui        # builds fixtures, launches Electron and tests the real workflow
-npm run smoke:settings  # multi-API priority, 429 fallback, encryption, text size (mock API)
+npm run smoke:settings  # master-prompt substitution, multi-API priority, 429 fallback, encryption, text size (mock API)
 ```
 
 `smoke:ui` expects a production build (`npm run build`) and writes screenshots to

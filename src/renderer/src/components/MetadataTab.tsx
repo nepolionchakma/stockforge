@@ -50,11 +50,10 @@ export function MetadataTab(): React.JSX.Element {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-end justify-between gap-4 px-8 pb-5 pt-7">
         <div className="min-w-0 flex-1">
-          <Eyebrow>Adobe Stock workflow</Eyebrow>
+          <Eyebrow>ADOBE STOCK WORKFLOW</Eyebrow>
           <h1 className="mt-2 text-[27px] font-semibold tracking-[-0.025em] text-ink">
             Metadata lab
-          </h1>
-          <p className="mt-1.5 max-w-[610px] text-[12.5px] leading-relaxed text-muted">
+          </h1>            <p className="mt-1.5 max-w-[610px] text-[12.5px] leading-relaxed text-muted">
             Generate titles, keywords and categories from an event context, edit them per
             image, then export a ready-to-import CSV.
           </p>

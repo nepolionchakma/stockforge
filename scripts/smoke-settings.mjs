@@ -65,7 +65,7 @@ async function startMockApi() {
           const user = JSON.parse(
             String(payload.messages?.find((message) => message.role === 'user')?.content ?? '{}')
           )
-          count = Math.max(1, Math.min(12, Number(user.count) || 1))
+          count = Math.max(1, Math.min(20, Number(user.count) || 1))
           event = String(user.event ?? event)
         } catch {
           // Keep the defaults if the request body cannot be parsed.
@@ -234,11 +234,8 @@ async function main() {
     await dialog.getByLabel('AI model').fill('mock-model')
     await dialog.getByLabel('API key', { exact: true }).fill(WORKING_KEY)
     await dialog.getByRole('button', { name: 'Add connection' }).click()
-    await dialog.getByText(/Saved\. The API key is encrypted/).waitFor({ timeout: 10000 })
-    await dialog.getByRole('button', { name: 'Close API editor' }).click()
+    await dialog.getByText(/2 saved/).waitFor({ timeout: 10000 })
     await page.waitForTimeout(300)
-
-    await dialog.getByText(/2 saved/).waitFor()
 
     const settingsFile = path.join(profileDir, 'ai-settings.json')
     const storedRaw = await fs.readFile(settingsFile, 'utf8')
@@ -268,8 +265,36 @@ async function main() {
     const storedScale = await page.evaluate(() => localStorage.getItem('stockforge.fontScale.v1'))
     if (storedScale !== '1.1') throw new Error(`Font scale was not persisted: ${storedScale}`)
 
+    const masterTemplate = await dialog.getByLabel('Master prompt template').inputValue()
+    if (!masterTemplate.includes('NICHE NAME: Easter Decorations')) {
+      throw new Error('The default master prompt was not loaded in Settings')
+    }
+
     await dialog.getByRole('button', { name: 'Close settings' }).click()
     await page.waitForTimeout(300)
+
+    const nicheInput = page.getByLabel('Niche name')
+    await nicheInput.waitFor()
+    const baseNiche = await nicheInput.inputValue()
+    const firstKeyword = page.locator('button[aria-label^="Add keyword"]').first()
+    const keywordLabel = await firstKeyword.getAttribute('aria-label')
+    const keyword = String(keywordLabel ?? '')
+      .replace(/^Add keyword /, '')
+      .replace(/ to niche$/, '')
+    await firstKeyword.click()
+    const selectedNiche = await nicheInput.inputValue()
+    if (!selectedNiche.startsWith(baseNiche) || !selectedNiche.includes(keyword)) {
+      throw new Error(`Keyword did not update the niche name: ${JSON.stringify(selectedNiche)}`)
+    }
+
+    const whiteBackgroundSwitch = page.getByRole('switch', { name: 'White background' })
+    await whiteBackgroundSwitch.waitFor()
+    if ((await whiteBackgroundSwitch.getAttribute('aria-checked')) !== 'true') {
+      throw new Error('White background is not on by default')
+    }
+
+    await page.getByRole('button', { name: 'More prompts' }).click()
+    await page.waitForTimeout(200)
 
     const requestsBeforeGenerate = mock.requests.length
     await page.getByRole('button', { name: 'Generate', exact: true }).click()
@@ -281,9 +306,57 @@ async function main() {
       { timeout: 20000 }
     )
     const promptCount = await page.locator('textarea[aria-label^="Prompt"]').count()
-    if (promptCount !== 2) throw new Error(`Expected 2 prompts after generation, got ${promptCount}`)
+    if (promptCount !== 3) throw new Error(`Expected 3 prompts after generation, got ${promptCount}`)
+    const generatedPromptTexts = await page
+      .locator('textarea[aria-label^="Prompt"]')
+      .evaluateAll((elements) => elements.map((element) => element.value))
+    if (!generatedPromptTexts.every((text) => /pure white/i.test(text))) {
+      throw new Error('White background was not added to every AI prompt')
+    }
+    if ((await whiteBackgroundSwitch.getAttribute('aria-checked')) !== 'true') {
+      throw new Error('White background switch changed unexpectedly during generation')
+    }
+    await whiteBackgroundSwitch.click()
+    await page.waitForTimeout(150)
+    if ((await whiteBackgroundSwitch.getAttribute('aria-checked')) !== 'false') {
+      throw new Error('White background switch did not turn off')
+    }
+    const storedWhiteBackground = await page.evaluate(() =>
+      localStorage.getItem('stockforge.whiteBackground.v1')
+    )
+    if (storedWhiteBackground !== 'false') {
+      throw new Error(`White background preference was not persisted: ${storedWhiteBackground}`)
+    }
+    await whiteBackgroundSwitch.click()
 
     const fallbackRequests = mock.requests.slice(requestsBeforeGenerate)
+    const successfulRequest = fallbackRequests.find(
+      (request) => request.authorization === `Bearer ${WORKING_KEY}`
+    )
+    const systemPrompt = String(
+      successfulRequest?.body?.messages?.find((message) => message.role === 'system')?.content ??
+        ''
+    )
+    if (!systemPrompt.includes(`NICHE NAME: ${selectedNiche}`)) {
+      throw new Error('The selected niche was not substituted into the master prompt')
+    }
+    if (systemPrompt.includes('NICHE NAME: Easter Decorations')) {
+      throw new Error('The placeholder niche was left in the master prompt')
+    }
+    if (!systemPrompt.includes('generate exactly 2 highly detailed')) {
+      throw new Error('The chosen prompt count was not substituted into the master prompt')
+    }
+    if (!systemPrompt.includes('all 20 styles') ||
+        !systemPrompt.includes('20.\tRealistic commercial still life')) {
+      throw new Error('Substitution accidentally changed the style library count')
+    }
+    if (!systemPrompt.includes('OUTPUT FORMAT')) {
+      throw new Error('The JSON output override was not appended')
+    }
+    if (!systemPrompt.includes('WHITE BACKGROUND REQUIREMENT')) {
+      throw new Error('The white background rule was not sent to the AI')
+    }
+
     if (
       !fallbackRequests.some((request) => request.authorization === `Bearer ${LIMITED_KEY}`) ||
       !fallbackRequests.some((request) => request.authorization === `Bearer ${WORKING_KEY}`)
@@ -320,6 +393,12 @@ async function main() {
     const reloadedDialog = page.getByRole('dialog')
     await reloadedDialog.waitFor()
     await reloadedDialog.getByText(/2 saved/).waitFor({ timeout: 10000 })
+    const reloadedTemplate = await reloadedDialog
+      .getByLabel('Master prompt template')
+      .inputValue()
+    if (!reloadedTemplate.includes('NICHE NAME') || reloadedTemplate.length < 10000) {
+      throw new Error('The master prompt template did not persist across restart')
+    }
 
     const beforeOrder = JSON.parse(await fs.readFile(settingsFile, 'utf8')).endpoints.map(
       (endpoint) => endpoint.encryptedApiKey
@@ -341,7 +420,7 @@ async function main() {
     const requestsBeforePriorityGenerate = mock.requests.length
     await page.getByRole('button', { name: 'Generate', exact: true }).click()
     await page.waitForFunction(
-      () => document.querySelectorAll('textarea[aria-label^="Prompt"]').length >= 3,
+      () => document.querySelectorAll('textarea[aria-label^="Prompt"]').length >= 4,
       { timeout: 20000 }
     )
     const priorityRequests = mock.requests.slice(requestsBeforePriorityGenerate)

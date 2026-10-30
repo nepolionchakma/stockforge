@@ -61,7 +61,7 @@ export function ApplyTab(): React.JSX.Element {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-end justify-between gap-4 px-8 pb-5 pt-7">
         <div>
-          <Eyebrow>Apply &amp; save</Eyebrow>
+          <Eyebrow>APPLY &amp; SAVE</Eyebrow>
           <h1 className="mt-2 text-[27px] font-semibold tracking-[-0.025em] text-ink">
             Embed metadata
           </h1>

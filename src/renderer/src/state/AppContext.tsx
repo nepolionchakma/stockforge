@@ -25,8 +25,10 @@ import {
   type PromptRecord,
   type PromptStyle
 } from '@shared/types'
+import { DEFAULT_MASTER_PROMPT } from '../data/defaultMasterPrompt'
 import { buildCsv, csvFileName } from '../lib/csv'
 import { YEAR_OPTIONS, pickDefaultEvent, resolveEvents } from '../lib/dates'
+import { buildMasterPrompt } from '../lib/masterPrompt'
 import { analyzeFiles } from '../lib/imageAnalysis'
 import {
   generateMetadata,
@@ -58,13 +60,22 @@ interface AppContextValue {
   metadataEvent: ReturnType<typeof resolveEvents>[number] | null
   prompts: Record<string, PromptRecord[]>
   seedPrompts: (eventId: string) => void
-  generatePromptsFor: (eventId: string, style: PromptStyle, count: number) => Promise<void>
+  generatePromptsFor: (
+    eventId: string,
+    style: PromptStyle,
+    count: number,
+    niche?: string
+  ) => Promise<void>
   updatePrompt: (eventId: string, promptId: string, text: string) => void
   removePrompt: (eventId: string, promptId: string) => void
-  regeneratePrompt: (eventId: string, promptId: string) => Promise<void>
-  addPrompt: (eventId: string, style: PromptStyle) => Promise<void>
+  regeneratePrompt: (eventId: string, promptId: string, niche?: string) => Promise<void>
+  addPrompt: (eventId: string, style: PromptStyle, niche?: string) => Promise<void>
   generatePromptsWithAi: boolean
   generatingPrompts: boolean
+  masterPrompt: string
+  setMasterPrompt: (template: string) => void
+  whiteBackground: boolean
+  setWhiteBackground: (enabled: boolean) => void
   aiSettings: AiSettings
   aiEnabled: boolean
   setAiEnabled: (enabled: boolean) => void
@@ -115,6 +126,9 @@ const AppContext = createContext<AppContextValue | null>(null)
 const PROMPT_STORAGE_KEY = 'stockforge.prompts.v1'
 const AI_ENABLED_KEY = 'stockforge.ai.enabled.v1'
 const FONT_SCALE_KEY = 'stockforge.fontScale.v1'
+const MASTER_PROMPT_KEY = 'stockforge.masterPrompt.v1'
+const WHITE_BACKGROUND_KEY = 'stockforge.whiteBackground.v1'
+const MAX_MASTER_PROMPT_LENGTH = 80_000
 
 const DEFAULT_PROVIDER =
   AI_PROVIDERS.find((provider) => provider.id === DEFAULT_AI_PROVIDER) ?? AI_PROVIDERS[0]
@@ -138,6 +152,19 @@ function readAiEnabled(): boolean {
 function readFontScale(): FontScale {
   const stored = Number(localStorage.getItem(FONT_SCALE_KEY))
   return FONT_SCALES.includes(stored as FontScale) ? (stored as FontScale) : 1
+}
+
+function readWhiteBackground(): boolean {
+  return localStorage.getItem(WHITE_BACKGROUND_KEY) !== 'false'
+}
+
+function readMasterPrompt(): string {
+  try {
+    const stored = localStorage.getItem(MASTER_PROMPT_KEY)
+    return stored === null ? DEFAULT_MASTER_PROMPT : stored
+  } catch {
+    return DEFAULT_MASTER_PROMPT
+  }
 }
 
 function toPromptRecords(texts: string[], style: PromptStyle): PromptRecord[] {
@@ -198,6 +225,8 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS)
   const [aiEnabled, setAiEnabled] = useState(readAiEnabled)
   const [generatingPrompts, setGeneratingPrompts] = useState(false)
+  const [masterPrompt, setMasterPromptState] = useState(readMasterPrompt)
+  const [whiteBackground, setWhiteBackground] = useState(readWhiteBackground)
   const [fontScale, setFontScale] = useState<FontScale>(readFontScale)
 
   const [images, setImages] = useState<ImageAsset[]>([])
@@ -265,6 +294,22 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   }, [fontScale])
 
   useEffect(() => {
+    localStorage.setItem(WHITE_BACKGROUND_KEY, String(whiteBackground))
+  }, [whiteBackground])
+
+  const setMasterPrompt = useCallback((template: string) => {
+    setMasterPromptState(template.slice(0, MAX_MASTER_PROMPT_LENGTH))
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MASTER_PROMPT_KEY, masterPrompt)
+    } catch {
+      // The template is a convenience; storage errors should not break generation.
+    }
+  }, [masterPrompt])
+
+  useEffect(() => {
     return window.stockforge.onEmbedProgress((progress) => setEmbedProgress(progress))
   }, [])
 
@@ -297,10 +342,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       if (!event) return
       setPrompts((current) => {
         if (current[eventId] !== undefined) return current
-        return { ...current, [eventId]: generatePrompts(event, 'auto', 1) }
+        return { ...current, [eventId]: generatePrompts(event, 'auto', 1, whiteBackground) }
       })
     },
-    [events]
+    [events, whiteBackground]
   )
 
   const appendPrompts = useCallback(
@@ -308,11 +353,15 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       eventId: string,
       style: PromptStyle,
       count: number,
-      mode: 'generate' | 'add'
+      mode: 'generate' | 'add',
+      niche?: string
     ) => {
       if (generatingPrompts) return
       const event = events.find((item) => item.id === eventId)
       if (!event) return
+      const customPrompt = masterPrompt.trim()
+        ? buildMasterPrompt(masterPrompt, niche?.trim() || event.name, count)
+        : undefined
 
       if (aiEnabled && hasAiKey) {
         setGeneratingPrompts(true)
@@ -327,7 +376,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
             kind: event.kind,
             style,
             count,
-            existingPrompts: (prompts[eventId] ?? []).map((prompt) => prompt.text)
+            existingPrompts: (prompts[eventId] ?? []).map((prompt) => prompt.text),
+            whiteBackground,
+            systemPrompt: customPrompt
           })
           const fresh = toPromptRecords(result.prompts, style)
           setPrompts((current) => ({
@@ -350,19 +401,28 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
         return
       }
 
-      const fresh = generatePrompts(event, style, count)
+      const fresh = generatePrompts(event, style, count, whiteBackground)
       setPrompts((current) => ({
         ...current,
         [eventId]: [...(current[eventId] ?? []), ...fresh]
       }))
       if (mode === 'add') notify('Prompt added', 'success')
     },
-    [aiEnabled, events, generatingPrompts, hasAiKey, notify, prompts]
+    [
+      aiEnabled,
+      events,
+      generatingPrompts,
+      hasAiKey,
+      masterPrompt,
+      notify,
+      prompts,
+      whiteBackground
+    ]
   )
 
   const generatePromptsFor = useCallback(
-    async (eventId: string, style: PromptStyle, count: number) => {
-      await appendPrompts(eventId, style, count, 'generate')
+    async (eventId: string, style: PromptStyle, count: number, niche?: string) => {
+      await appendPrompts(eventId, style, count, 'generate', niche)
     },
     [appendPrompts]
   )
@@ -384,12 +444,15 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   }, [])
 
   const regeneratePrompt = useCallback(
-    async (eventId: string, promptId: string) => {
+    async (eventId: string, promptId: string, niche?: string) => {
       if (generatingPrompts) return
       const event = events.find((item) => item.id === eventId)
       const list = prompts[eventId] ?? []
       const existing = list.find((prompt) => prompt.id === promptId)
       if (!event || !existing) return
+      const customPrompt = masterPrompt.trim()
+        ? buildMasterPrompt(masterPrompt, niche?.trim() || event.name, 1)
+        : undefined
 
       if (aiEnabled && hasAiKey) {
         setGeneratingPrompts(true)
@@ -406,7 +469,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
             count: 1,
             existingPrompts: list
               .filter((prompt) => prompt.id !== promptId)
-              .map((prompt) => prompt.text)
+              .map((prompt) => prompt.text),
+            whiteBackground,
+            systemPrompt: customPrompt
           })
           const text = result.prompts[0]?.trim()
           if (!text) throw new Error('The AI response did not contain a usable prompt')
@@ -438,7 +503,12 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
         const currentList = current[eventId] ?? []
         const currentPrompt = currentList.find((prompt) => prompt.id === promptId)
         if (!currentPrompt) return current
-        const fresh = generatePrompts(event, currentPrompt.style ?? 'auto', 1)[0]
+        const fresh = generatePrompts(
+          event,
+          currentPrompt.style ?? 'auto',
+          1,
+          whiteBackground
+        )[0]
         return {
           ...current,
           [eventId]: currentList.map((prompt) =>
@@ -450,12 +520,21 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       })
       notify('Prompt regenerated', 'success')
     },
-    [aiEnabled, events, generatingPrompts, hasAiKey, notify, prompts]
+    [
+      aiEnabled,
+      events,
+      generatingPrompts,
+      hasAiKey,
+      masterPrompt,
+      notify,
+      prompts,
+      whiteBackground
+    ]
   )
 
   const addPrompt = useCallback(
-    async (eventId: string, style: PromptStyle) => {
-      await appendPrompts(eventId, style, 1, 'add')
+    async (eventId: string, style: PromptStyle, niche?: string) => {
+      await appendPrompts(eventId, style, 1, 'add', niche)
     },
     [appendPrompts]
   )
@@ -753,6 +832,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     addPrompt,
     generatePromptsWithAi: aiEnabled && hasAiKey,
     generatingPrompts,
+    masterPrompt,
+    setMasterPrompt,
+    whiteBackground,
+    setWhiteBackground,
     aiSettings,
     aiEnabled,
     setAiEnabled,

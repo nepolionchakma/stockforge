@@ -7,9 +7,11 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  FileText,
   KeyRound,
   Pencil,
   Plus,
+  RotateCcw,
   Settings2,
   Trash2,
   Type,
@@ -22,6 +24,7 @@ import {
   type AiProvider,
   type FontScale
 } from '@shared/types'
+import { DEFAULT_MASTER_PROMPT } from '../data/defaultMasterPrompt'
 import { useApp } from '../state/AppContext'
 import {
   Badge,
@@ -138,6 +141,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): React.JSX.
   }
 
   const persist = async (showConfirmation: boolean): Promise<string | null> => {
+    const wasEditing = editingId !== null
     setSaving(true)
     setStatus(null)
     try {
@@ -148,12 +152,22 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): React.JSX.
         model,
         apiKey: apiKey.trim() || undefined
       })
-      setEditingId(result.endpointId)
       setApiKey('')
       const savedEndpoint = result.settings.endpoints.find(
         (endpoint) => endpoint.id === result.endpointId
       )
       setExistingHasKey(savedEndpoint?.hasApiKey ?? false)
+      if (showConfirmation && !wasEditing) {
+        resetForm()
+        app.notify(
+          savedEndpoint?.hasApiKey
+            ? 'API connection added. Add another whenever you need a backup.'
+            : 'Connection saved without a key. Add a key before generating.',
+          savedEndpoint?.hasApiKey ? 'success' : 'info'
+        )
+        return result.endpointId
+      }
+      setEditingId(result.endpointId)
       if (showConfirmation) {
         setStatus({
           ok: true,
@@ -246,7 +260,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): React.JSX.
               Settings
             </h2>
             <p className="mt-0.5 text-[10.5px] text-faint">
-              AI API connections, priority fallback and display size.
+              AI API connections, prompt master template and display size.
             </p>
           </div>
           <IconButton label="Close settings" onClick={onClose}>
@@ -262,13 +276,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): React.JSX.
               <Badge tone={endpoints.some((endpoint) => endpoint.hasApiKey) ? 'success' : 'neutral'}>
                 {endpoints.length} saved
               </Badge>
+              <Badge tone="neutral">Unlimited</Badge>
             </div>
             <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
-              Tried from top to bottom. If one hits a rate limit or fails, the next saved key is
-              used automatically.
+              Add as many connections as you need. They are tried from top to bottom; if one hits a
+              rate limit or fails, the next saved key is used automatically.
             </p>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 max-h-[300px] space-y-2 overflow-y-auto pr-1">
               {endpoints.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-white/[0.1] px-4 py-6 text-center">
                   <p className="text-[11.5px] font-medium text-ink">No API connections yet</p>
@@ -594,6 +609,56 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): React.JSX.
                 }
               />
             </div>
+          </section>
+
+          <section className="rounded-xl border border-edge bg-white/[0.022] p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <FileText className="h-4 w-4 text-accent" />
+              <h3 className="text-[12.5px] font-medium text-ink">Master prompt template</h3>
+              <Badge tone={app.masterPrompt.trim() ? 'info' : 'neutral'}>
+                {app.masterPrompt.trim() ? 'Active' : 'Off'}
+              </Badge>
+            </div>              <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+                Used for AI prompt generation. <span className="text-muted">NICHE NAME</span> is replaced
+                with the niche selected in Prompt studio, and prompt counts are replaced with the number
+                chosen there. Paste any master prompt that contains a NICHE NAME line. Changes save
+                automatically.
+              </p>
+            <textarea
+              value={app.masterPrompt}
+              onChange={(event) => app.setMasterPrompt(event.target.value)}
+              aria-label="Master prompt template"
+              spellCheck={false}
+              maxLength={80000}
+              className="field mt-3 min-h-[190px] w-full resize-y rounded-lg border border-edge bg-white/[0.03] px-3 py-2.5 font-mono text-[10px] leading-relaxed text-ink placeholder:text-faint focus:outline-none"
+              placeholder="Paste your master prompt here. Include a line like NICHE NAME: … and the prompt count will be replaced automatically."
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<RotateCcw className="h-3.5 w-3.5" />}
+                onClick={() => app.setMasterPrompt(DEFAULT_MASTER_PROMPT)}
+              >
+                Restore default
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => app.setMasterPrompt('')}
+                disabled={!app.masterPrompt}
+              >
+                Clear
+              </Button>
+              <span className="ml-auto text-[9.5px] tabular-nums text-faint">
+                {app.masterPrompt.length.toLocaleString()} characters
+              </span>
+            </div>
+            {!app.masterPrompt.trim() ? (
+              <p className="mt-2 text-[9.5px] leading-relaxed text-faint">
+                Empty: AI generation uses the built-in short prompt format.
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-xl border border-edge bg-white/[0.022] p-4">
