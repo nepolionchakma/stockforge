@@ -17,15 +17,19 @@ const fixtures = [
 ]
 const exportDir = path.join(root, 'tmp', 'packaged-export')
 const csvPath = path.join(exportDir, 'packaged.csv')
+const profileDir = path.join(root, 'tmp', 'smoke-packaged-profile')
 
 await fs.rm(exportDir, { recursive: true, force: true })
 await fs.mkdir(exportDir, { recursive: true })
+await fs.rm(profileDir, { recursive: true, force: true })
+await fs.mkdir(profileDir, { recursive: true })
 await fs.access(packagedExe)
 
 const app = await electron.launch({
   executablePath: packagedExe,
   args: [],
-  cwd: path.dirname(packagedExe)
+  cwd: path.dirname(packagedExe),
+  env: { ...process.env, STOCKFORGE_USER_DATA_DIR: profileDir }
 })
 
 try {

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+}
+
 @theme {
   --font-sans: "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Inter",
     "Helvetica Neue", Arial, sans-serif;
@@ -49,6 +53,21 @@ textarea {
 
 input[type="checkbox"] {
   accent-color: #f0b35f;
+}
+
+select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: #141720;
+  color: #edeef2;
+}
+
+select option:checked {
+  background-color: #f0b35f;
+  color: #231606;
 }
 
 ::selection {

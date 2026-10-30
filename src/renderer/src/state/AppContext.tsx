@@ -8,14 +8,22 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import type {
-  EmbedOptions,
-  EmbedProgress,
-  EmbedResult,
-  ImageAsset,
-  Metadata,
-  PromptRecord,
-  PromptStyle
+import {
+  AI_PROVIDERS,
+  DEFAULT_AI_PROVIDER,
+  FONT_SCALES,
+  type AiEndpointInput,
+  type AiEndpointSaveResult,
+  type AiSettings,
+  type AiTestResult,
+  type EmbedOptions,
+  type EmbedProgress,
+  type EmbedResult,
+  type FontScale,
+  type ImageAsset,
+  type Metadata,
+  type PromptRecord,
+  type PromptStyle
 } from '@shared/types'
 import { buildCsv, csvFileName } from '../lib/csv'
 import { YEAR_OPTIONS, pickDefaultEvent, resolveEvents } from '../lib/dates'
@@ -25,7 +33,7 @@ import {
   keywordSuggestions,
   metadataToText
 } from '../lib/metadataEngine'
-import { generatePrompts } from '../lib/promptEngine'
+import { generatePrompts, newPromptId } from '../lib/promptEngine'
 
 export type AppTab = 'events' | 'metadata' | 'apply'
 export type ToastTone = 'success' | 'error' | 'info'
@@ -50,11 +58,22 @@ interface AppContextValue {
   metadataEvent: ReturnType<typeof resolveEvents>[number] | null
   prompts: Record<string, PromptRecord[]>
   seedPrompts: (eventId: string) => void
-  generatePromptsFor: (eventId: string, style: PromptStyle, count: number) => void
+  generatePromptsFor: (eventId: string, style: PromptStyle, count: number) => Promise<void>
   updatePrompt: (eventId: string, promptId: string, text: string) => void
   removePrompt: (eventId: string, promptId: string) => void
-  regeneratePrompt: (eventId: string, promptId: string) => void
-  addPrompt: (eventId: string, style: PromptStyle) => void
+  regeneratePrompt: (eventId: string, promptId: string) => Promise<void>
+  addPrompt: (eventId: string, style: PromptStyle) => Promise<void>
+  generatePromptsWithAi: boolean
+  generatingPrompts: boolean
+  aiSettings: AiSettings
+  aiEnabled: boolean
+  setAiEnabled: (enabled: boolean) => void
+  saveAiEndpoint: (input: AiEndpointInput) => Promise<AiEndpointSaveResult>
+  deleteAiEndpoint: (id: string) => Promise<void>
+  reorderAiEndpoints: (orderedIds: string[]) => Promise<void>
+  testAiConnection: (endpointId: string) => Promise<AiTestResult>
+  fontScale: FontScale
+  setFontScale: (scale: FontScale) => void
   copyText: (text: string, message?: string) => Promise<void>
   images: ImageAsset[]
   importing: boolean
@@ -94,6 +113,45 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 const PROMPT_STORAGE_KEY = 'stockforge.prompts.v1'
+const AI_ENABLED_KEY = 'stockforge.ai.enabled.v1'
+const FONT_SCALE_KEY = 'stockforge.fontScale.v1'
+
+const DEFAULT_PROVIDER =
+  AI_PROVIDERS.find((provider) => provider.id === DEFAULT_AI_PROVIDER) ?? AI_PROVIDERS[0]
+
+const DEFAULT_AI_SETTINGS: AiSettings = {
+  endpoints: [
+    {
+      id: 'default',
+      provider: DEFAULT_PROVIDER.id,
+      baseUrl: DEFAULT_PROVIDER.baseUrl,
+      model: DEFAULT_PROVIDER.defaultModel,
+      hasApiKey: false
+    }
+  ]
+}
+
+function readAiEnabled(): boolean {
+  return localStorage.getItem(AI_ENABLED_KEY) !== 'false'
+}
+
+function readFontScale(): FontScale {
+  const stored = Number(localStorage.getItem(FONT_SCALE_KEY))
+  return FONT_SCALES.includes(stored as FontScale) ? (stored as FontScale) : 1
+}
+
+function toPromptRecords(texts: string[], style: PromptStyle): PromptRecord[] {
+  return texts.map((text) => ({
+    id: newPromptId(),
+    text,
+    style,
+    createdAt: Date.now()
+  }))
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
 
 const initialYear = YEAR_OPTIONS.includes(new Date().getFullYear())
   ? new Date().getFullYear()
@@ -137,6 +195,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   const [selectedEventId, setSelectedEventId] = useState(initialEvent.id)
   const [metadataEventId, setMetadataEventId] = useState<string | null>(initialEvent.id)
   const [prompts, setPrompts] = useState<Record<string, PromptRecord[]>>(readStoredPrompts)
+  const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS)
+  const [aiEnabled, setAiEnabled] = useState(readAiEnabled)
+  const [generatingPrompts, setGeneratingPrompts] = useState(false)
+  const [fontScale, setFontScale] = useState<FontScale>(readFontScale)
 
   const [images, setImages] = useState<ImageAsset[]>([])
   const [importing, setImporting] = useState(false)
@@ -181,6 +243,28 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   }, [prompts])
 
   useEffect(() => {
+    let cancelled = false
+    void window.stockforge
+      .getAiSettings()
+      .then((settings) => {
+        if (!cancelled) setAiSettings(settings)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(AI_ENABLED_KEY, String(aiEnabled))
+  }, [aiEnabled])
+
+  useEffect(() => {
+    localStorage.setItem(FONT_SCALE_KEY, String(fontScale))
+    void window.stockforge.setZoomFactor(fontScale).catch(() => undefined)
+  }, [fontScale])
+
+  useEffect(() => {
     return window.stockforge.onEmbedProgress((progress) => setEmbedProgress(progress))
   }, [])
 
@@ -201,6 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   )
 
   const activeMetadata = activeImageId ? (metadata[activeImageId] ?? null) : null
+  const hasAiKey = aiSettings.endpoints.some((endpoint) => endpoint.hasApiKey)
 
   const selectEvent = useCallback((eventId: string) => {
     setSelectedEventId(eventId)
@@ -218,17 +303,68 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     [events]
   )
 
-  const generatePromptsFor = useCallback(
-    (eventId: string, style: PromptStyle, count: number) => {
+  const appendPrompts = useCallback(
+    async (
+      eventId: string,
+      style: PromptStyle,
+      count: number,
+      mode: 'generate' | 'add'
+    ) => {
+      if (generatingPrompts) return
       const event = events.find((item) => item.id === eventId)
       if (!event) return
+
+      if (aiEnabled && hasAiKey) {
+        setGeneratingPrompts(true)
+        try {
+          const result = await window.stockforge.generateAiPrompts({
+            eventName: event.name,
+            eventDate: event.dateLabel,
+            blurb: event.blurb,
+            keywords: event.keywords,
+            objects: event.objects,
+            palette: event.palette,
+            kind: event.kind,
+            style,
+            count,
+            existingPrompts: (prompts[eventId] ?? []).map((prompt) => prompt.text)
+          })
+          const fresh = toPromptRecords(result.prompts, style)
+          setPrompts((current) => ({
+            ...current,
+            [eventId]: [...(current[eventId] ?? []), ...fresh]
+          }))
+          const provider =
+            AI_PROVIDERS.find((item) => item.id === result.provider)?.label ?? result.provider
+          notify(
+            `${fresh.length} AI prompt${fresh.length === 1 ? '' : 's'} ${
+              mode === 'add' ? 'added' : 'generated'
+            } · ${provider}${result.attempted > 1 ? ' (fallback)' : ''}`,
+            'success'
+          )
+        } catch (error) {
+          notify(errorText(error, 'AI prompt generation failed'), 'error')
+        } finally {
+          setGeneratingPrompts(false)
+        }
+        return
+      }
+
       const fresh = generatePrompts(event, style, count)
       setPrompts((current) => ({
         ...current,
         [eventId]: [...(current[eventId] ?? []), ...fresh]
       }))
+      if (mode === 'add') notify('Prompt added', 'success')
     },
-    [events]
+    [aiEnabled, events, generatingPrompts, hasAiKey, notify, prompts]
+  )
+
+  const generatePromptsFor = useCallback(
+    async (eventId: string, style: PromptStyle, count: number) => {
+      await appendPrompts(eventId, style, count, 'generate')
+    },
+    [appendPrompts]
   )
 
   const updatePrompt = useCallback((eventId: string, promptId: string, text: string) => {
@@ -248,17 +384,64 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   }, [])
 
   const regeneratePrompt = useCallback(
-    (eventId: string, promptId: string) => {
+    async (eventId: string, promptId: string) => {
+      if (generatingPrompts) return
       const event = events.find((item) => item.id === eventId)
-      if (!event) return
+      const list = prompts[eventId] ?? []
+      const existing = list.find((prompt) => prompt.id === promptId)
+      if (!event || !existing) return
+
+      if (aiEnabled && hasAiKey) {
+        setGeneratingPrompts(true)
+        try {
+          const result = await window.stockforge.generateAiPrompts({
+            eventName: event.name,
+            eventDate: event.dateLabel,
+            blurb: event.blurb,
+            keywords: event.keywords,
+            objects: event.objects,
+            palette: event.palette,
+            kind: event.kind,
+            style: existing.style ?? 'auto',
+            count: 1,
+            existingPrompts: list
+              .filter((prompt) => prompt.id !== promptId)
+              .map((prompt) => prompt.text)
+          })
+          const text = result.prompts[0]?.trim()
+          if (!text) throw new Error('The AI response did not contain a usable prompt')
+          setPrompts((current) => ({
+            ...current,
+            [eventId]: (current[eventId] ?? []).map((prompt) =>
+              prompt.id === promptId
+                ? { ...prompt, text, style: existing.style, createdAt: Date.now() }
+                : prompt
+            )
+          }))
+          const provider =
+            AI_PROVIDERS.find((item) => item.id === result.provider)?.label ?? result.provider
+          notify(
+            `Prompt regenerated · ${provider}${
+              result.attempted > 1 ? ' (fallback)' : ''
+            }`,
+            'success'
+          )
+        } catch (error) {
+          notify(errorText(error, 'AI prompt generation failed'), 'error')
+        } finally {
+          setGeneratingPrompts(false)
+        }
+        return
+      }
+
       setPrompts((current) => {
-        const list = current[eventId] ?? []
-        const existing = list.find((prompt) => prompt.id === promptId)
-        if (!existing) return current
-        const fresh = generatePrompts(event, existing.style ?? 'auto', 1)[0]
+        const currentList = current[eventId] ?? []
+        const currentPrompt = currentList.find((prompt) => prompt.id === promptId)
+        if (!currentPrompt) return current
+        const fresh = generatePrompts(event, currentPrompt.style ?? 'auto', 1)[0]
         return {
           ...current,
-          [eventId]: list.map((prompt) =>
+          [eventId]: currentList.map((prompt) =>
             prompt.id === promptId
               ? { ...fresh, id: prompt.id, createdAt: Date.now() }
               : prompt
@@ -267,21 +450,63 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       })
       notify('Prompt regenerated', 'success')
     },
-    [events, notify]
+    [aiEnabled, events, generatingPrompts, hasAiKey, notify, prompts]
   )
 
   const addPrompt = useCallback(
-    (eventId: string, style: PromptStyle) => {
-      const event = events.find((item) => item.id === eventId)
-      if (!event) return
-      const fresh = generatePrompts(event, style, 1)
-      setPrompts((current) => ({
-        ...current,
-        [eventId]: [...(current[eventId] ?? []), ...fresh]
-      }))
-      notify('Prompt added', 'success')
+    async (eventId: string, style: PromptStyle) => {
+      await appendPrompts(eventId, style, 1, 'add')
     },
-    [events, notify]
+    [appendPrompts]
+  )
+
+  const saveAiEndpoint = useCallback(
+    async (input: AiEndpointInput): Promise<AiEndpointSaveResult> => {
+      const saved = await window.stockforge.saveAiEndpoint(input)
+      setAiSettings(saved.settings)
+      if (saved.settings.endpoints.some((endpoint) => endpoint.hasApiKey)) {
+        setAiEnabled(true)
+      }
+      notify('API connection saved', 'success')
+      return saved
+    },
+    [notify]
+  )
+
+  const deleteAiEndpoint = useCallback(
+    async (id: string): Promise<void> => {
+      try {
+        const settings = await window.stockforge.deleteAiEndpoint(id)
+        setAiSettings(settings)
+        notify('API connection removed', 'info')
+      } catch (error) {
+        notify(errorText(error, 'Could not remove the API connection'), 'error')
+      }
+    },
+    [notify]
+  )
+
+  const reorderAiEndpoints = useCallback(
+    async (orderedIds: string[]): Promise<void> => {
+      try {
+        const settings = await window.stockforge.reorderAiEndpoints(orderedIds)
+        setAiSettings(settings)
+      } catch (error) {
+        notify(errorText(error, 'Could not change the API priority'), 'error')
+      }
+    },
+    [notify]
+  )
+
+  const testAiConnection = useCallback(
+    async (endpointId: string): Promise<AiTestResult> => {
+      try {
+        return await window.stockforge.testAiConnection(endpointId)
+      } catch (error) {
+        return { ok: false, message: errorText(error, 'Could not reach the AI provider') }
+      }
+    },
+    []
   )
 
   const copyText = useCallback(
@@ -526,6 +751,17 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     removePrompt,
     regeneratePrompt,
     addPrompt,
+    generatePromptsWithAi: aiEnabled && hasAiKey,
+    generatingPrompts,
+    aiSettings,
+    aiEnabled,
+    setAiEnabled,
+    saveAiEndpoint,
+    deleteAiEndpoint,
+    reorderAiEndpoints,
+    testAiConnection,
+    fontScale,
+    setFontScale,
     copyText,
     images,
     importing,

@@ -61,6 +61,8 @@ export function EventsTab(): React.JSX.Element {
 
   const event = app.selectedEvent
   const prompts = app.prompts[event.id] ?? []
+  const aiEndpoints = app.aiSettings.endpoints.filter((endpoint) => endpoint.hasApiKey)
+  const primaryAi = aiEndpoints[0]
 
   useEffect(() => {
     app.seedPrompts(event.id)
@@ -327,9 +329,26 @@ export function EventsTab(): React.JSX.Element {
                       {prompts.length} {prompts.length === 1 ? 'prompt' : 'prompts'}
                     </Badge>
                   </div>
-                  <p className="mt-0.5 text-[10.5px] text-faint">
-                    Prompts are tailored to this event. Edit any card before copying.
-                  </p>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">
+                    <span
+                      className={cx(
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
+                        app.generatePromptsWithAi ? 'bg-mint' : 'bg-faint'
+                      )}
+                    />
+                    <span className="max-w-[220px] truncate" title={primaryAi?.model}>
+                      {app.generatePromptsWithAi
+                        ? `AI generation · ${primaryAi?.model ?? 'ready'}${
+                            aiEndpoints.length > 1
+                              ? ` +${aiEndpoints.length - 1} backup${
+                                  aiEndpoints.length > 2 ? 's' : ''
+                                }`
+                              : ''
+                          }`
+                        : 'Offline prompt builder'}
+                    </span>
+                    <span className="shrink-0">· Edit before copying</span>
+                  </div>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -338,7 +357,7 @@ export function EventsTab(): React.JSX.Element {
                     type="button"
                     className="flex h-full w-7 items-center justify-center text-faint transition-colors hover:text-ink"
                     onClick={() => setPromptCount((count) => Math.max(1, count - 1))}
-                    disabled={promptCount <= 1}
+                    disabled={promptCount <= 1 || app.generatingPrompts}
                     aria-label="Fewer prompts"
                   >
                     <Minus className="h-3 w-3" />
@@ -350,7 +369,7 @@ export function EventsTab(): React.JSX.Element {
                     type="button"
                     className="flex h-full w-7 items-center justify-center text-faint transition-colors hover:text-ink"
                     onClick={() => setPromptCount((count) => Math.min(12, count + 1))}
-                    disabled={promptCount >= 12}
+                    disabled={promptCount >= 12 || app.generatingPrompts}
                     aria-label="More prompts"
                   >
                     <Plus className="h-3 w-3" />
@@ -362,6 +381,7 @@ export function EventsTab(): React.JSX.Element {
                     onChange={(styleEvent) =>
                       setPromptStyle(styleEvent.target.value as PromptStyle)
                     }
+                    disabled={app.generatingPrompts}
                     aria-label="Prompt style"
                   >
                     {PROMPT_STYLES.map((style) => (
@@ -375,11 +395,12 @@ export function EventsTab(): React.JSX.Element {
                   variant="primary"
                   size="sm"
                   icon={<Sparkles className="h-3.5 w-3.5" />}
+                  loading={app.generatingPrompts}
                   onClick={() =>
-                    app.generatePromptsFor(event.id, promptStyle, promptCount)
+                    void app.generatePromptsFor(event.id, promptStyle, promptCount)
                   }
                 >
-                  Generate
+                  {app.generatingPrompts ? 'Generating…' : 'Generate'}
                 </Button>
               </div>
             </div>
@@ -398,7 +419,8 @@ export function EventsTab(): React.JSX.Element {
                     size="sm"
                     className="mt-4"
                     icon={<Plus className="h-3.5 w-3.5" />}
-                    onClick={() => app.addPrompt(event.id, promptStyle)}
+                    loading={app.generatingPrompts}
+                    onClick={() => void app.addPrompt(event.id, promptStyle)}
                   >
                     Add a prompt
                   </Button>
@@ -409,8 +431,9 @@ export function EventsTab(): React.JSX.Element {
                     key={prompt.id}
                     prompt={prompt}
                     index={index}
+                    busy={app.generatingPrompts}
                     onUpdate={(text) => app.updatePrompt(event.id, prompt.id, text)}
-                    onRegenerate={() => app.regeneratePrompt(event.id, prompt.id)}
+                    onRegenerate={() => void app.regeneratePrompt(event.id, prompt.id)}
                     onRemove={() => app.removePrompt(event.id, prompt.id)}
                     onCopy={() => app.copyText(prompt.text, 'Prompt copied')}
                   />
@@ -423,7 +446,8 @@ export function EventsTab(): React.JSX.Element {
                     variant="ghost"
                     size="sm"
                     icon={<Plus className="h-3.5 w-3.5" />}
-                    onClick={() => app.addPrompt(event.id, promptStyle)}
+                    disabled={app.generatingPrompts}
+                    onClick={() => void app.addPrompt(event.id, promptStyle)}
                   >
                     Add prompt
                   </Button>
@@ -448,6 +472,7 @@ export function EventsTab(): React.JSX.Element {
 function PromptCard({
   prompt,
   index,
+  busy,
   onUpdate,
   onRegenerate,
   onRemove,
@@ -455,6 +480,7 @@ function PromptCard({
 }: {
   prompt: PromptRecord
   index: number
+  busy: boolean
   onUpdate: (text: string) => void
   onRegenerate: () => void
   onRemove: () => void
@@ -481,7 +507,7 @@ function PromptCard({
             <Copy className="h-3 w-3" />
             Copy
           </button>
-          <IconButton label="Regenerate prompt" onClick={onRegenerate}>
+          <IconButton label="Regenerate prompt" onClick={onRegenerate} disabled={busy}>
             <RefreshCw className="h-3.5 w-3.5" />
           </IconButton>
           <IconButton label="Remove prompt" tone="danger" onClick={onRemove}>

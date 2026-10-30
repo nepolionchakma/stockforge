@@ -16,6 +16,7 @@
     "build": "npm run typecheck && electron-vite build",
     "verify": "tsx scripts/verify-core.ts && tsx scripts/verify-embed.ts",
     "smoke:ui": "node scripts/smoke-ui.mjs",
+    "smoke:settings": "node scripts/smoke-settings.mjs",
     "icon": "node scripts/make-icon.mjs",
     "pack": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win nsis"

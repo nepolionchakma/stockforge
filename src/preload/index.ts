@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { EmbedProgress, StockForgeApi } from '../shared/types'
+import type {
+  AiEndpointInput,
+  AiPromptRequest,
+  EmbedProgress,
+  StockForgeApi
+} from '../shared/types'
 
 const api: StockForgeApi = {
   pickImages: () => ipcRenderer.invoke('dialog:pickImages'),
@@ -17,6 +22,15 @@ const api: StockForgeApi = {
   showItemInFolder: (path) => ipcRenderer.invoke('shell:showItem', path),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  setZoomFactor: (factor) => ipcRenderer.invoke('window:setZoomFactor', factor),
+  getAiSettings: () => ipcRenderer.invoke('ai:getSettings'),
+  saveAiEndpoint: (input: AiEndpointInput) => ipcRenderer.invoke('ai:saveEndpoint', input),
+  deleteAiEndpoint: (id: string) => ipcRenderer.invoke('ai:deleteEndpoint', id),
+  reorderAiEndpoints: (orderedIds: string[]) =>
+    ipcRenderer.invoke('ai:reorderEndpoints', orderedIds),
+  generateAiPrompts: (request: AiPromptRequest) =>
+    ipcRenderer.invoke('ai:generatePrompts', request),
+  testAiConnection: (endpointId: string) => ipcRenderer.invoke('ai:test', endpointId),
   platform: process.platform
 }
 

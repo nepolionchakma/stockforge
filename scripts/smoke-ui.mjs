@@ -11,6 +11,7 @@ const fixtures = [
 const exportDir = path.join(root, 'tmp', 'ui-export')
 const csvPath = path.join(root, 'tmp', 'ui-export', 'check.csv')
 const shotDir = path.join(root, 'screenshots')
+const profileDir = path.join(root, 'tmp', 'smoke-ui-profile')
 
 async function waitForFile(filePath, timeout = 15000) {
   const start = Date.now()
@@ -29,13 +30,19 @@ async function main() {
   await fs.mkdir(shotDir, { recursive: true })
   await fs.rm(exportDir, { recursive: true, force: true })
   await fs.mkdir(exportDir, { recursive: true })
+  await fs.rm(profileDir, { recursive: true, force: true })
+  await fs.mkdir(profileDir, { recursive: true })
 
   const errors = []
   const app = await electron.launch({
     executablePath: electronPath,
     args: ['.'],
     cwd: root,
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' }
+    env: {
+      ...process.env,
+      STOCKFORGE_USER_DATA_DIR: profileDir,
+      ELECTRON_ENABLE_LOGGING: '1'
+    }
   })
 
   try {

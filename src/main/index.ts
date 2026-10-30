@@ -14,11 +14,27 @@ import {
   shell
 } from 'electron'
 import { exiftool } from 'exiftool-vendored'
-import type { EmbedItem, EmbedOptions, PickedImageResult } from '../shared/types'
+import type {
+  AiEndpointInput,
+  AiPromptRequest,
+  EmbedItem,
+  EmbedOptions,
+  PickedImageResult
+} from '../shared/types'
+import { generateAiPrompts, testAiConnection } from './aiClient'
+import {
+  deleteAiEndpoint,
+  getAiSettings,
+  reorderAiEndpoints,
+  saveAiEndpoint
+} from './aiSettings'
 import { embedAll } from './embedder'
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png'])
 const allowedImagePaths = new Set<string>()
+
+const userDataOverride = process.env.STOCKFORGE_USER_DATA_DIR
+if (userDataOverride) app.setPath('userData', userDataOverride)
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -167,6 +183,24 @@ function registerIpc(): void {
   ipcMain.handle('shell:openExternal', async (_event, url: string) => {
     if (url.startsWith('https://')) await shell.openExternal(url)
   })
+
+  ipcMain.handle('window:setZoomFactor', (event, factor: number) => {
+    const value = Number(factor)
+    if (!Number.isFinite(value)) return
+    const window = BrowserWindow.fromWebContents(event.sender)
+    window?.webContents.setZoomFactor(Math.min(1.25, Math.max(0.8, value)))
+  })
+
+  ipcMain.handle('ai:getSettings', () => getAiSettings())
+  ipcMain.handle('ai:saveEndpoint', (_event, input: AiEndpointInput) => saveAiEndpoint(input))
+  ipcMain.handle('ai:deleteEndpoint', (_event, id: string) => deleteAiEndpoint(id))
+  ipcMain.handle('ai:reorderEndpoints', (_event, orderedIds: string[]) =>
+    reorderAiEndpoints(orderedIds)
+  )
+  ipcMain.handle('ai:generatePrompts', (_event, request: AiPromptRequest) =>
+    generateAiPrompts(request)
+  )
+  ipcMain.handle('ai:test', (_event, endpointId: string) => testAiConnection(endpointId))
 }
 
 app.whenReady().then(() => {

@@ -8,7 +8,8 @@ the three repetitive parts of the workflow:
 3. **Images → embedded metadata → separate output folder**
 
 Built with Electron, React, TypeScript, Tailwind CSS and ExifTool. Metadata generation runs
-locally — no API keys, account or network connection required.
+locally. Prompts work with the built-in offline builder, or with your own OpenAI-compatible
+AI API key if you add one in Settings.
 
 ![Events & prompts](screenshots/events.png)
 
@@ -21,10 +22,13 @@ locally — no API keys, account or network connection required.
   offsets, election day, lunar dates and more.
 - Search by event, prop or keyword; filter by federal, seasonal, awareness, shopping,
   cultural or food.
-- Selecting an event seeds **one prompt by default**. Generate 1–12 at a time with an auto,
-  photo, 3D, vector, watercolor or minimal style.
+- Selecting an event seeds **one prompt by default** from the offline builder.
+- Generate 1–12 at a time with an auto, photo, 3D, vector, watercolor or minimal style.
+- With an AI key saved and enabled, **Generate**, **Add prompt** and **Regenerate** call your
+  provider. Without a key they use the offline template engine.
 - Every prompt is editable, regenerable, removable and copyable. Copy all is available too.
 - Prompts are saved per event in local storage, so they survive a restart.
+- The prompt header shows whether AI or the offline builder is active.
 
 ### 2. Metadata lab
 
@@ -52,6 +56,35 @@ locally — no API keys, account or network connection required.
 - Live progress, per-file saved/skipped/failed status, and a shortcut to open the output folder.
 
 ![Apply & save](screenshots/apply.png)
+
+### Settings
+
+Open the gear at the bottom of the sidebar.
+
+- **AI prompt generation** — provider presets for **Priyo Forge** (free, default), **Google AI
+  Studio**, **Groq Cloud**, **OpenRouter Free**, Z.ai, OpenAI, OpenRouter, or any custom
+  OpenAI-compatible endpoint. Edit the base URL if needed and use **Test connection**.
+- Each provider has a **model dropdown** with the supported models and an explicit **Free** or
+  **Paid** label. Choose **Custom model…** to enter any model ID not in the list.
+- Free options: Priyo Forge (no card, fair-use daily limits), Google AI Studio (free tier),
+  Groq Cloud (free tier), OpenRouter Free (`openrouter/free`, roughly 50 requests/day at the
+  time of writing), and Z.ai GLM Flash models. Limits and model availability are controlled by
+  each provider and can change; switch models or providers in the same panel if needed.
+- **Add multiple API connections** with **Add API**. Each connection has its own provider, model
+  and encrypted key. Use the ↑/↓ buttons to set priority.
+- Prompt generation tries connections **from top to bottom**. If a key is rate-limited, out of
+  quota, or the request fails, the next saved key is tried automatically. The success toast shows
+  which provider was used and whether a fallback was needed.
+- Each API key is encrypted through Electron `safeStorage` in the app's user-data folder. Keys
+  are never returned to the renderer, never displayed again after saving, and never logged.
+- **Use AI when generating prompts** can be switched off at any time. If no key is saved, the
+  offline builder is used automatically.
+- **Text size** offers 90%, 100%, 110% and 120%. It scales the whole interface so labels and
+  prompt text stay readable, and the choice survives a restart.
+- The collapse button beside the logo turns the sidebar into a 72 px icon rail; only icons
+  remain, with tooltips. The collapsed state is remembered.
+
+![Settings](screenshots/settings.png)
 
 ## Run it
 
@@ -89,6 +122,7 @@ npm run typecheck       # main + preload + renderer
 npm run build           # production bundles
 npm run verify          # calendar/math/metadata/CSV + ExifTool roundtrip
 npm run smoke:ui        # builds fixtures, launches Electron and tests the real workflow
+npm run smoke:settings  # multi-API priority, 429 fallback, encryption, text size (mock API)
 ```
 
 `smoke:ui` expects a production build (`npm run build`) and writes screenshots to
@@ -100,6 +134,10 @@ metadata generation, clipboard output, CSV export and the embedded-copy export.
 - **69 moments, not every unofficial national day.** The set covers the commercially useful
   US calendar: federal holidays, heritage and awareness months, retail moments, seasons and
   major food days.
+- **AI generation is optional.** Calls go from the Electron main process directly to the
+  provider you configure. Priyo Forge, Gemini, Groq and OpenRouter Free presets are included,
+  but their limits apply; paid providers use your credits. The app has no bundled AI key. The
+  offline prompt builder and all metadata tools work without any key.
 - Cultural and religious dates in the date tables can shift by a day depending on local
   observance; the UI flags this.
 - Metadata is generated from the event, filename tokens, image properties and color
@@ -111,8 +149,9 @@ metadata generation, clipboard output, CSV export and the embedded-copy export.
 ## Structure
 
 ```
-src/main       Electron window, protocol, dialogs, CSV writing, ExifTool embedder
+src/main       Electron window, protocol, dialogs, CSV writing, ExifTool embedder,
+               encrypted AI settings and OpenAI-compatible client
 src/preload    Typed, context-isolated bridge
 src/renderer   React UI, event data, prompt engine, metadata engine, CSV builder
-scripts        Core verification, ExifTool roundtrip, UI smoke test, icon generator
+scripts        Core verification, ExifTool roundtrip, UI/settings smoke tests, icon generator
 ```
